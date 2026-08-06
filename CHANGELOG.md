@@ -1,6 +1,6 @@
 # Changelog
 
-## UNRELEASED
+## 0.7.1 — 2026-08-06
 
 - **Fix: cross-model interoperability and Pi authentication** — Agent SDK children now require Pi's refreshed Anthropic OAuth credential (or API key) and ignore Claude Code login and inherited authentication settings. Rebuilt Claude sessions also bound foreign tool-call IDs to Anthropic's 64-character format and disambiguate IDs that would otherwise collide after sanitization. Unit regressions pin both handoff directions, and RPC integration alternates Claude with a non-Claude model after parallel and sequential tools.
 
