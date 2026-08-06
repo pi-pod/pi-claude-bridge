@@ -35,7 +35,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRpcHarness } from "./lib/rpc-harness.mjs";
+import { createRpcHarness, seedPiAnthropicAuth } from "./lib/rpc-harness.mjs";
 
 const BRIDGE_MODEL = "claude-bridge/claude-haiku-4-5";
 const COMPACT_TIMEOUT = 90_000; // compact should finish in ~10s; hang = timeout
@@ -47,6 +47,7 @@ const testAgentDir = mkdtempSync(join(tmpdir(), "compact-splitturn-agent-"));
 writeFileSync(join(testAgentDir, "settings.json"), JSON.stringify({
 	compaction: { keepRecentTokens: 50 },
 }));
+seedPiAnthropicAuth(testAgentDir);
 
 const harness = createRpcHarness({
 	name: "compact-splitturn",

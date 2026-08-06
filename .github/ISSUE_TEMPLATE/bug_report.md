@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report something broken in pi-claude-bridge
+about: Report something broken in pi-claude-agent-sdk
 labels: bug
 ---
 
@@ -44,5 +44,5 @@ paste here
 
 ## Environment
 
-- **pi-claude-bridge version:**
+- **pi-claude-agent-sdk version:**
 - **Platform:** <!-- macOS 14 / Ubuntu 24.04 / WSL2 / etc. -->
