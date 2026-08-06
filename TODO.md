@@ -16,8 +16,7 @@ that does not exist yet, or on someone else's repo.
    are not empty. `isReentrant` is already computed at `src/index.ts:1354`,
    immediately before the call at `:1375`, and just isn't passed in. The stale
    `fix/issue-30-pruned-history` branch discriminates on `priorMessages.length === 0`
-   and would break subagent isolation — do not merge it. Decide deliberately what
-   the AskClaude caller at `:1625` should pass. Guarded by
+   and would break subagent isolation — do not merge it. Guarded by
    `unit-sync-shared-session.mjs` plus `int-subagent-rpiv-codebase-locator.mjs`.
 
 2. **Make the dropped-thinking-signature rate visible.** 26 of 2,363
@@ -135,16 +134,14 @@ No repro, so there is nothing to write yet. Re-run the scanners with
 - **AskUserQuestion pi shim** (main provider only): CC never sees
   AskUserQuestion (it's in `DISALLOWED_BUILTIN_TOOLS`), so it can't ask the
   user questions interactively. Port a pi-native version using `ctx.ui.custom()`
-  for an option picker with free-text fallback. Not applicable to AskClaude
-  subagents (can't interact with user). See `fractary/pi-claude-code`
+  for an option picker with free-text fallback. See `fractary/pi-claude-code`
   `AskUserQuestion.ts` for reference.
 
 - **PlanMode pi shim** (main provider only): Similarly, EnterPlanMode/
   ExitPlanMode are blocked. A pi-native plan mode could use
   `pi.setActiveTools()` to restrict to read-only tools, block destructive bash
-  via `tool_call` event, and surface plan approval through pi's TUI. Not
-  applicable to AskClaude subagents. See `fractary/pi-claude-code`
-  `PlanMode.ts`.
+  via `tool_call` event, and surface plan approval through pi's TUI. See
+  `fractary/pi-claude-code` `PlanMode.ts`.
 
 ## Lower-priority testing gaps
 

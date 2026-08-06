@@ -2,11 +2,9 @@
 
 [![npm version](https://img.shields.io/npm/v/pi-claude-agent-sdk)](https://www.npmjs.com/package/pi-claude-agent-sdk)
 
-Pi extension that integrates Claude Code via the [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript). Forked from [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge) by Eli Dickinson, which was based initially on [claude-agent-sdk-pi](https://github.com/prateekmedia/claude-agent-sdk-pi) by Prateek Sunal. Adds streaming, MCP tool bridging, custom pi tool bridging, session resume/persistence, context sync, thinking support, skills forwarding, and the AskClaude tool.
+Pi extension that integrates Claude Code as a pi model provider via the [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript). Forked from [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge) by Eli Dickinson, which was based initially on [claude-agent-sdk-pi](https://github.com/prateekmedia/claude-agent-sdk-pi) by Prateek Sunal. Adds streaming, MCP tool bridging, custom pi tool bridging, session resume/persistence, context sync, thinking support, and skills forwarding.
 
-1. **Provider** — Use Opus/Sonnet/Haiku as models in pi, with all tool calls flowing through pi's TUI
-2. **AskClaude tool** — Delegate tasks or questions to Claude Code when using another provider
-
+Use Opus/Sonnet/Haiku as models in pi, with all tool calls flowing through pi's TUI.
 
 **FYI:** Anthropic [announced and then unannounced](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan) a change to how you would be billed for tools that use the Agent SDK like this one. As of June 15, 2026 it uses subscription quota just like Claude Code direct does.
 
@@ -27,29 +25,9 @@ Use `/model` to select `claude-bridge/claude-fable-5`, `claude-bridge/claude-opu
 
 Behind the scenes, pi's tools are bridged to Claude Code but it should all work like normal in pi. Bash commands get a 120-second default timeout (matching Claude Code's default) since pi's bash has no timeout by default. Skills in pi are copied over to Claude Code's system prompt so should work as they would with any other pi provider. Steering works mid-turn: a message sent while Claude is running a tool reaches it at that tool boundary, not after the whole turn finishes.
 
-**Authentication:** the bridge requires an Anthropic OAuth credential (or API key) configured in Pi and uses Pi's normal token refresh. Claude Code login and inherited Claude/Anthropic authentication settings are deliberately ignored, so configure Anthropic authentication in Pi before using the provider or AskClaude.
+**Authentication:** the bridge requires an Anthropic OAuth credential (or API key) configured in Pi and uses Pi's normal token refresh. Claude Code login and inherited Claude/Anthropic authentication settings are deliberately ignored, so configure Anthropic authentication in Pi before using the provider.
 
 **1M Context:** Opus 5, Opus 4.8, and Opus 4.7 get 1M context by default. Opus 4.6 only gets 1M if you're on a Max plan or pay for Extra Usage. Sonnet 4.6 only gets 1M if you pay for Extra Usage. You will need to set `provider.plan` and/or `provider.longContextExtraUsage` for 1M context in Opus 4.6/Sonnet 4.6 as described in [Configuration](#configuration).
-
-## AskClaude Tool
-
-Available when using any non-claude-bridge provider. Pi's LLM can delegate tasks to Claude Code and wait for it to answer a question or perform a task. Examples of how to use:
-
-- "Ask Claude to plan a fix"
-- "If you get stuck, ask claude for help"
-- "Ask claude to review the plan in @foo.md, implement it, then ask an isolated=true claude to review the implementation"
-- "Ask claude to poke holes in this theory"
-- "Find all the places in the codebase that handle auth"
-
-You could also create skills or add something to AGENTS.md to e.g. "Always call Ask Claude to review complicated feature implementations before considering the task complete."
-
-### Parameters
-
-- **`prompt`** — the question or task for Claude Code
-- **`mode`** — `read` (default, read files and search/fetch on web), `none`, or `full` (read+write+bash, disable this mode with `allowFullMode: false` in config)
-- **`model`** — `opus` (default), `sonnet`, `haiku`, or a full model ID
-- **`thinking`** — effort level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`
-- **`isolated`** — when `true`, Claude gets a clean session with no conversation history (default: `false`)
 
 ## Configuration
 
@@ -57,12 +35,6 @@ Config: `~/.pi/agent/claude-bridge.json` (global) or the project Pi config direc
 
 ```json
 {
-  "askClaude": {
-    "enabled": true,
-    "allowFullMode": true,
-    "defaultIsolated": false,
-    "description": "Custom tool description override"
-  },
   "provider": {
     "plan": "max",
     "longContextExtraUsage": false,
@@ -71,16 +43,6 @@ Config: `~/.pi/agent/claude-bridge.json` (global) or the project Pi config direc
   }
 }
 ```
-
-`askClaude`:
-- `enabled` — register the AskClaude tool (default `true`)
-- `name` — override the tool's pi-side name (default `"AskClaude"`)
-- `label` — override the TUI label (default `"Ask Claude Code"`)
-- `description` — override the tool description. Default when `allowFullMode: true`: *"Delegate to Claude Code for a second opinion or analysis (code review, architecture questions, debugging theories), or to autonomously handle a task. Defaults to read-only mode — use full mode when the user wants to delegate a task that requires changes. Prefer to handle straightforward tasks yourself."*
-- `defaultMode` — `"read"` (default), `"none"`, or `"full"`
-- `defaultIsolated` — start each call in a fresh session (default `false`)
-- `allowFullMode` — allow `mode: "full"`; set `false` to lock it out
-- `appendSkills` — forward pi's skills block into the system prompt (default `true`)
 
 `provider`:
 - `plan` (default `"pro"`) — set to `"max"` for Max (or Team Premium/Enterprise) to enable Opus 4.6 with 1M context. If it's unset, the first interactive session points this out once, then records `startupNoticeShown` (the date, `YYYY-MM-DD`) in the global config so it doesn't nag again.
@@ -91,14 +53,13 @@ Config: `~/.pi/agent/claude-bridge.json` (global) or the project Pi config direc
 - `autoMemoryEnabled` — enable Claude Code's auto-memory system (default `false`)
 - `pathToClaudeCodeExecutable` — path to the `claude` binary. Useful if your OS/filesystem has the SDK's bundled musl/glibc binaries in a place where they can't run. For example, with Nix you can set the binary to e.g. `"/home/you/.nix-profile/bin/claude"`.
 
-
 **Extension providers and models.json:** pi's `modelOverrides` in `~/.pi/agent/models.json` do not currently apply to extension-registered providers (like claude-bridge). Overriding `contextWindow` or other fields requires editing `src/models.ts` directly.
 
 ## Tests
 
-`npm run test:unit` for offline tests (`tests/unit-*.mjs`: queue, import, skills). 
+`npm run test:unit` for offline tests (`tests/unit-*.mjs`: queue, import, skills).
 
-`npm test` for the full suite, which adds integration tests that hit APIs (`tests/int-*.{sh,mjs}`: smoke, multi-turn, cache, session-resume, session-rebuild, tool-message). Set `CLAUDE_BRIDGE_TESTING_ALT_MODEL` in `.env.test` for the alt-provider smoke test (e.g. `openrouter/z-ai/glm-4.7-flash`).
+`npm test` for the full suite, which adds integration tests that hit APIs (`tests/int-*.{sh,mjs}`: smoke, multi-turn, cache, session-resume, session-rebuild, tool-message). Set `CLAUDE_BRIDGE_TESTING_ALT_PROVIDER` and `CLAUDE_BRIDGE_TESTING_ALT_MODEL` in `.env.test` for the provider-switch tests.
 
 Integration tests spawn real `pi` and Claude Code subprocesses, so they need write access to `~/.claude` for CC's session state — a sandbox that blocks it makes the next turn's `--resume` fail with `No conversation found with session ID`. The RPC harness probes for this at startup and fails fast.
 
@@ -107,10 +68,6 @@ Integration tests spawn real `pi` and Claude Code subprocesses, so they need wri
 Set `CLAUDE_BRIDGE_DEBUG=1` to enable debug output:
 
 - **Bridge log** at `~/.pi/agent/claude-bridge.log` — every provider call, session sync decision, tool result delivery, and CC's stderr. Override location with `CLAUDE_BRIDGE_DEBUG_PATH`.
-- **Per-query Claude Code CLI logs** at `~/.pi/agent/cc-cli-logs/<timestamp>-<tag>-<seq>.log` — the CC subprocess's own debug stream, one file per `query()` call. Tags are `provider` (main turn) or `askclaude` (sub-delegation). Useful when a resume fails or CC misbehaves internally — shows the CLI's own view of session loading, API requests, and tool calls.
+- **Per-query Claude Code CLI logs** at `~/.pi/agent/cc-cli-logs/<timestamp>-<tag>-<seq>.log` — the CC subprocess's own debug stream, one file per `query()` call. Tags are `provider` (main turn) or `compact-summary`. Useful when a resume fails or CC misbehaves internally — shows the CLI's own view of session loading, API requests, and tool calls.
 
 When filing a bug about a session-resume failure (e.g. "No conversation found"), the most useful attachments are the `syncResult:` lines from the bridge log plus the matching `cc-cli-logs/` file for the failing query.
-
-## Maintenance
-
-After a Claude Code release, review `MODE_DISALLOWED_TOOLS` in `src/index.ts` — it gates which CC tools the AskClaude subagent may invoke per mode (`read` / `full` / `none`). Add new agentic tools (PlanMode, Task spawning, etc.) to the appropriate mode lists if they shouldn't be available to subagents.

@@ -12,16 +12,6 @@ import { dirname, join } from "path";
 export interface Config {
 	/** Date (YYYY-MM-DD) the one-time startup notice was shown. Written by the extension, not the user. */
 	startupNoticeShown?: string;
-	askClaude?: {
-		enabled?: boolean;
-		name?: string;
-		label?: string;
-		description?: string;
-		defaultMode?: "full" | "read" | "none";
-		defaultIsolated?: boolean;
-		allowFullMode?: boolean;
-		appendSkills?: boolean;
-	};
 	/** Low-level Claude Agent SDK plumbing. Most users won't need these. */
 	provider?: {
 		appendSystemPrompt?: boolean;
@@ -72,7 +62,6 @@ export function loadConfig(cwd: string): Config {
 	const project = tryParseJson(join(cwd, CONFIG_DIR_NAME, "claude-bridge.json"));
 	return {
 		startupNoticeShown: project.startupNoticeShown ?? global.startupNoticeShown,
-		askClaude: { ...global.askClaude, ...project.askClaude },
 		provider: { ...global.provider, ...project.provider },
 	};
 }

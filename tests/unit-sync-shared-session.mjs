@@ -41,7 +41,7 @@ describe("syncSharedSession", () => {
 			assert.equal(
 				result.sessionId,
 				null,
-				"a context shorter than the cursor — a subagent, or AskClaude — must start a fresh Claude Code session instead of resuming the parent's",
+				"a context shorter than the cursor — such as a subagent — must start a fresh Claude Code session instead of resuming the parent's",
 			);
 			assert.equal(
 				result.preserveSharedSession,
