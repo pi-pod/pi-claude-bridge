@@ -121,7 +121,7 @@ const ACTIVE_STREAM_SIMPLE_KEY = Symbol.for("claude-bridge:activeStreamSimple");
 // MODELS is buildModels(getModels("anthropic")) — projection kept in models.js.
 const MODELS = buildModels(getModels("anthropic"));
 let providerSettings: NonNullable<Config["provider"]> = {};
-let longContextSettings: LongContextSettings = { plan: "pro", longContextExtraUsage: false };
+let longContextSettings: LongContextSettings = { plan: "max", longContextExtraUsage: false };
 
 // --- Error handling ---
 
@@ -677,10 +677,10 @@ let piMode: ExtensionContext["mode"] | null = null;
 let piModelRegistry: AnthropicAuthRegistry | null = null;
 const activeQueryContexts = new Set<QueryContext>();
 
-// `plan` is the one setting whose default silently costs the user something (no
-// Opus 1M on Max), so announce it once. Deferred to the first bridge query
-// rather than session_start: the notice persists a flag to the global config,
-// and firing it on startup would write that file for every pi session that
+// `plan` is the one setting whose default can cost a Pro user something (Opus
+// 4.6 at 1M when they only have 200K), so announce it once. Deferred to the first
+// provider query rather than session_start: the notice persists a flag to the global
+// config, and firing it on startup would write that file for every pi session that
 // merely has this extension installed.
 let planNoticePending = false;
 
@@ -691,7 +691,7 @@ function showPlanNoticeOnce(): void {
 	planNoticePending = false;
 	const path = markStartupNoticeShown();
 	piUI?.notify(
-		`Claude bridge: assuming a Pro plan. On Max (or Team Premium/Enterprise), set provider.plan to "max" in ${path} to unlock Opus at 1M context.`,
+		`pi-claude-agent-sdk: assuming a Max plan. On Pro, set provider.plan to "pro" in ${path} so Opus 4.6 stays at 200K context.`,
 		"info",
 	);
 }
@@ -1235,7 +1235,7 @@ async function deliverToolResults(
 	}
 	if (c.pendingToolCalls.size > 0) {
 		debug(`WARNING: ${c.pendingToolCalls.size} MCP handlers still waiting after delivering ${results.length} results`);
-		piUI?.notify(`Claude bridge: ${c.pendingToolCalls.size} tool handler(s) still waiting — provider may be stuck`, "warning");
+		piUI?.notify(`pi-claude-agent-sdk: ${c.pendingToolCalls.size} tool handler(s) still waiting — provider may be stuck`, "warning");
 	}
 }
 
@@ -1567,7 +1567,7 @@ export default function (pi: ExtensionAPI) {
 	providerSettings = config.provider ?? {};
 	// We need these settings to know if we're eligible for 1M context on certain models
 	longContextSettings = {
-		plan: providerSettings.plan ?? "pro",
+		plan: providerSettings.plan ?? "max",
 		longContextExtraUsage: providerSettings.longContextExtraUsage ?? false,
 	};
 	const registeredModels = applyLongContext(MODELS, longContextSettings);
@@ -1631,7 +1631,7 @@ export default function (pi: ExtensionAPI) {
 			const msg = errorMessage(err);
 			debug("session_before_compact: takeover failed; cancelling to avoid native compact fallback", err);
 			ctx.ui?.notify?.(
-				`Claude bridge compact failed (${msg}); cancelled to avoid known hang. Retry, switch model, or reduce context.`,
+				`pi-claude-agent-sdk compact failed (${msg}); cancelled to avoid known hang. Retry, switch model, or reduce context.`,
 				"error",
 			);
 			return { cancel: true };

@@ -1,5 +1,10 @@
 # Changelog
 
+## UNRELEASED
+
+- **Fix: default plan is Max; brand notices as pi-claude-agent-sdk** — `provider.plan` now defaults to `"max"` so Max subscribers get Opus 4.6 at 1M without config. The one-time notice tells Pro users to set `"pro"`. User-facing notifications use the package name instead of "Claude bridge".
+
+
 ## 0.8.0 — 2026-08-06
 
 - **Remove: AskClaude tool** — remove the delegated Claude Code tool, its configuration, UI, and integration coverage; the package now only registers the Claude bridge provider.
