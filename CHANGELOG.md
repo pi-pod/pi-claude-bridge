@@ -1,6 +1,6 @@
 # Changelog
 
-## UNRELEASED
+## 0.8.1 — 2026-08-06
 
 - **Fix: default plan is Max; brand notices as pi-claude-agent-sdk** — `provider.plan` now defaults to `"max"` so Max subscribers get Opus 4.6 at 1M without config. The one-time notice tells Pro users to set `"pro"`. User-facing notifications use the package name instead of "Claude bridge".
 
