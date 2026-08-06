@@ -1,6 +1,6 @@
 # Changelog
 
-## UNRELEASED
+## 0.8.0 — 2026-08-06
 
 - **Remove: AskClaude tool** — remove the delegated Claude Code tool, its configuration, UI, and integration coverage; the package now only registers the Claude bridge provider.
 
