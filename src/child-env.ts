@@ -46,7 +46,7 @@ export function buildClaudeChildEnv(
 	const headerApiKey = headers.find(([name]) => name.toLowerCase() === "x-api-key")?.[1];
 	const credential = resolved?.auth.apiKey ?? headerApiKey;
 	if (!credential && !bearerToken) {
-		throw new Error("No Anthropic credential is configured in Pi. Configure Anthropic authentication in Pi before using claude-bridge or AskClaude.");
+		throw new Error("No Anthropic credential is configured in Pi. Configure Anthropic authentication in Pi before using claude-bridge.");
 	}
 
 	if (resolved?.auth.baseUrl) env.ANTHROPIC_BASE_URL = resolved.auth.baseUrl;
