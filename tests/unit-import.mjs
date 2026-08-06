@@ -44,6 +44,39 @@ describe("tool ID sanitization", () => {
 		assert.equal(result[1].content[0].tool_use_id, "toolu_abc123-XYZ");
 	});
 
+	it("keeps colliding sanitized IDs unique and paired", () => {
+		const msgs = [
+			{ role: "assistant", content: [
+				{ type: "toolCall", id: "call:a", name: "read", arguments: { path: "a" } },
+				{ type: "toolCall", id: "call?a", name: "read", arguments: { path: "b" } },
+			] },
+			{ role: "toolResult", toolCallId: "call:a", content: "A" },
+			{ role: "toolResult", toolCallId: "call?a", content: "B" },
+		];
+		const result = convert(msgs);
+		const useIds = result[0].content.map((block) => block.id);
+		const resultIds = result[1].content.map((block) => block.tool_use_id);
+		assert.equal(new Set(useIds).size, 2);
+		assert.deepEqual(resultIds, useIds);
+	});
+
+	it("bounds long foreign IDs without losing pairing or uniqueness", () => {
+		const common = `call_${"x".repeat(100)}`;
+		const msgs = [
+			{ role: "assistant", content: [
+				{ type: "toolCall", id: `${common}:a`, name: "read", arguments: {} },
+				{ type: "toolCall", id: `${common}:b`, name: "read", arguments: {} },
+			] },
+			{ role: "toolResult", toolCallId: `${common}:a`, content: "A" },
+			{ role: "toolResult", toolCallId: `${common}:b`, content: "B" },
+		];
+		const result = convert(msgs);
+		const useIds = result[0].content.map((block) => block.id);
+		assert.ok(useIds.every((id) => id.length <= 64 && /^[a-zA-Z0-9_-]+$/.test(id)));
+		assert.equal(new Set(useIds).size, 2);
+		assert.deepEqual(result[1].content.map((block) => block.tool_use_id), useIds);
+	});
+
 	it("tool_use and tool_result IDs stay paired after sanitization", () => {
 		const ids = ["fn.read:0", "fn.write:1", "fn.bash:2"];
 		const msgs = [];

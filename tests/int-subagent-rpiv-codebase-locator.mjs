@@ -11,7 +11,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRpcHarness } from "./lib/rpc-harness.mjs";
+import { createRpcHarness, seedPiAnthropicAuth } from "./lib/rpc-harness.mjs";
 
 const DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BRIDGE_MODEL = "claude-bridge/claude-haiku-4-5";
@@ -32,6 +32,7 @@ mkdirSync(join(testProjectDir, "src"), { recursive: true });
 cpSync(RPIV_LOCATOR_FIXTURE, join(testProjectDir, ".pi", "agents", "codebase-locator.md"));
 writeFileSync(join(testProjectDir, "package.json"), JSON.stringify({ name: "subagent-rpiv-locator-fixture", private: true }, null, 2));
 writeFileSync(join(testProjectDir, "src", "rpiv_locator.ts"), "export const RPIV_LOCATOR_SENTINEL = 'rpiv-codebase-locator';\n");
+seedPiAnthropicAuth(testAgentDir);
 
 const harness = createRpcHarness({
 	name: "subagent-rpiv-codebase-locator",

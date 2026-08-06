@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## UNRELEASED
+
+- **Fix: cross-model interoperability and Pi authentication** — Agent SDK children now require Pi's refreshed Anthropic OAuth credential (or API key) and ignore Claude Code login and inherited authentication settings. Rebuilt Claude sessions also bound foreign tool-call IDs to Anthropic's 64-character format and disambiguate IDs that would otherwise collide after sanitization. Unit regressions pin both handoff directions, and RPC integration alternates Claude with a non-Claude model after parallel and sequential tools.
+
+## 0.7.0 — 2026-08-05
+
+First release under the name `pi-claude-agent-sdk` (forked from `pi-claude-bridge`). Install with `pi install npm:pi-claude-agent-sdk`.
 
 - **Fix: mirror Pi context-file instructions** — Claude Code now receives the same global and hierarchical `AGENTS.md` / `CLAUDE.md` files that Pi loads, in the same order, rather than only the nearest `AGENTS.md`.
 - **Add: mid-turn steering** — a steer sent while a tool was running used to be stashed and replayed as a follow-up after Claude's whole turn finished. The prompt is now a long-lived streaming generator and the steer is written to CC's stdin (`priority: "next"`) before the tool result is released, so CC drains it at that tool boundary and acts on it in the same turn.

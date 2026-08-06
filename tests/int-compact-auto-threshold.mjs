@@ -9,7 +9,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRpcHarness } from "./lib/rpc-harness.mjs";
+import { createRpcHarness, seedPiAnthropicAuth } from "./lib/rpc-harness.mjs";
 
 const BRIDGE_MODEL = "claude-bridge/claude-haiku-4-5";
 const COMPACT_TIMEOUT = 120_000;
@@ -19,6 +19,7 @@ const testAgentDir = mkdtempSync(join(tmpdir(), "compact-auto-agent-"));
 writeFileSync(join(testAgentDir, "settings.json"), JSON.stringify({
 	compaction: { enabled: false, reserveTokens: 198000, keepRecentTokens: 50 },
 }));
+seedPiAnthropicAuth(testAgentDir);
 
 const harness = createRpcHarness({
 	name: "compact-auto-threshold",

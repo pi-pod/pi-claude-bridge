@@ -365,8 +365,8 @@ test("--resume re-reads the JSONL from disk on every call", { timeout: 180_000 }
 });
 
 test("arbitrary sanitized tool_use ids in an imported transcript resume fine", { timeout: 120_000 }, async () => {
-	// convert.ts sanitizeToolId only strips characters outside [A-Za-z0-9_-]; the
-	// result keeps pi's own id shape rather than CC's toolu_* form.
+	// convert.ts keeps safe, bounded pi IDs rather than rewriting every foreign
+	// call into CC's toolu_* form.
 	const sessionId = randomUUID();
 	const session = createSession({ sessionId, projectPath: CWD, claudeDir: process.env.CLAUDE_CONFIG_DIR, model: MODEL });
 	session.importMessages(repairToolPairing([

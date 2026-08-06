@@ -3,9 +3,10 @@
  * Provides spawn, send, event waiting, and text collection utilities.
  */
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { getClaudeDir } from "cc-session-io";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
 
@@ -15,6 +16,16 @@ const DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 // (`node --import tsx --test tests/int-foo.mjs`) and not just via `npm test`.
 const ENV_FILE = resolve(DIR, ".env.test");
 if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
+
+/** Copy only Pi's Anthropic credential into an isolated test agent directory. */
+export function seedPiAnthropicAuth(targetAgentDir) {
+	const sourceAgentDir = process.env.PI_CODING_AGENT_DIR ?? resolve(homedir(), ".pi", "agent");
+	const sourcePath = resolve(sourceAgentDir, "auth.json");
+	const auth = JSON.parse(readFileSync(sourcePath, "utf8"));
+	if (!auth.anthropic) throw new Error(`Integration tests require an Anthropic credential in Pi (${sourcePath})`);
+	mkdirSync(targetAgentDir, { recursive: true });
+	writeFileSync(resolve(targetAgentDir, "auth.json"), `${JSON.stringify({ anthropic: auth.anthropic }, null, 2)}\n`, { mode: 0o600 });
+}
 
 // Claude Code persists session state under its config dir. A sandbox that blocks
 // those writes lets the first query succeed and then fails the next turn's

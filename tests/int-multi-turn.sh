@@ -15,6 +15,7 @@ TIMEOUT=180
 PASS=0
 FAIL=0
 EXPECTED_VERSION=$(jq -r .version "$DIR/package.json")
+EXPECTED_NAME=$(jq -r .name "$DIR/package.json")
 
 trap kill_descendants EXIT
 
@@ -69,7 +70,7 @@ run_json "multi-turn: tool use, context, history" \
 # when processAssistantMessage didn't end the stream on tool_use.
 run_json "single-turn: multiple sequential tool calls" \
   '([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "toolcall_end")] | length) >= 2 and
-   ([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "text_end") | .content] | join(" ") | test("pi-claude-bridge")) and
+   ([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "text_end") | .content] | join(" ") | test("'"$EXPECTED_NAME"'")) and
    ([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "text_end")] | length) > 0' \
   pi --no-session -ne -e "$DIR" \
   --model "claude-bridge/claude-haiku-4-5" \
@@ -83,7 +84,7 @@ run_json "single-turn: 3+ parallel tool calls" \
   '([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "toolcall_end")] | length) >= 3 and
    ([ .[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "text_end") ] | length) > 0 and
    ([ .[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "text_end") | .content | select(. != null and . != "") ] | length) > 0 and
-   ([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "text_end") | .content] | join(" ") | test("pi-claude-bridge")) and
+   ([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "text_end") | .content] | join(" ") | test("'"$EXPECTED_NAME"'")) and
    ([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "text_end") | .content] | join(" ") | test("ES2022"))' \
   pi --no-session -ne -e "$DIR" \
   --model "claude-bridge/claude-haiku-4-5" \
@@ -103,9 +104,9 @@ run_json "regression: final text survives multi-round tool calls" \
   -p "Read package.json and README.md, then summarize what you found in one sentence."
 
 # Regression: extractAllToolResults traversed past assistant messages, feeding
-# stale tool results from turn 1 into turn 2.  Turn 1 reads package.json (has
-# "pi-claude-bridge"), turn 2 reads LICENSE (has "MIT License").  If stale
-# results leak, turn 2 would see package.json content instead of LICENSE content.
+# stale tool results from turn 1 into turn 2. Turn 1 reads package.json; turn 2
+# reads LICENSE. If stale results leak, turn 2 would see package.json content
+# instead of LICENSE content.
 run_json "regression: turn 2 tool results not stale from turn 1" \
   '([.[] | select(.type == "agent_end")] | length) >= 2 and
    ([.[] | select(.type == "message_update") | .assistantMessageEvent | select(.type == "toolcall_end")] | length) >= 2 and

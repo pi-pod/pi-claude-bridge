@@ -21,6 +21,7 @@ import { claudeCodeSettings, loadConfig, markStartupNoticeShown, type Config } f
 import { extractAgentsAppend } from "./agents-md.js";
 import { createToolServer } from "./mcp-server.js";
 import { buildActionSummary, type ToolCallState } from "./askclaude-ui.js";
+import { CC_CHILD_ENV, resolveClaudeChildEnv, type AnthropicAuthRegistry } from "./child-env.js";
 
 // Compat (#2): use factory if available (pi-ai ≥0.66), else fall back to constructor (gsd-pi etc.)
 const _piAi = piAi as any;
@@ -42,18 +43,6 @@ const DIAG_LOG_PATH = join(homedir(), ".pi", "agent", "claude-bridge-diag.log");
 // emitted rather than ones we imagined.
 const RECORD_STREAM_PATH = process.env.CLAUDE_BRIDGE_RECORD_STREAM;
 
-// Applied to every Claude Code subprocess the bridge spawns — provider, AskClaude
-// and the compact summary. One place, so a guard is added once rather than three
-// times, and so a missing one is visible.
-//
-// - ENABLE_CLAUDEAI_MCP_SERVERS=0: keep the user's claude.ai-connected MCP servers
-//   out of a pi session, which serves its own tools.
-// - DISABLE_AUTO_COMPACT=1: pi owns compaction; CC compacting its own copy would
-//   diverge from pi's history, which is the source of truth for every rebuild.
-const CC_CHILD_ENV = {
-	ENABLE_CLAUDEAI_MCP_SERVERS: "0",
-	DISABLE_AUTO_COMPACT: "1",
-} as const;
 
 // Ensure log directories exist when debug is enabled
 if (DEBUG) {
@@ -394,12 +383,13 @@ async function runIsolatedSummary(
 		const claudeExecutable = compactProviderSettings?.pathToClaudeCodeExecutable;
 		const cliModel = claudeCodeModelId(model, longContextSettings);
 		debug(`compact summary: spawn model=${cliModel} registeredModel=${model.id} promptLen=${promptText.length}`);
+		const childEnv = await resolveClaudeChildEnv(piModelRegistry);
 
 		sdkQuery = query({
 			prompt: promptText,
 			options: {
 				cwd,
-				env: { ...process.env, ...CC_CHILD_ENV },
+				env: childEnv,
 				settings: { autoMemoryEnabled: false },
 				tools: [],
 				strictMcpConfig: true,
@@ -509,7 +499,7 @@ function verifyWrittenSession(
 		piUI?.notify(
 			`Session file issue: ${msg}\n` +
 			`cwd=${cwd} realpath=${safeRealpath(cwd)} CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR ?? "(unset)"}\n` +
-			`Please copy and paste this message into a new issue at https://github.com/elidickinson/pi-claude-bridge/issues/new` +
+			`Please copy and paste this message into a new issue at https://github.com/pi-pod/pi-claude-agent-sdk/issues/new` +
 			(DEBUG ? ` and attach ${DEBUG_LOG_PATH}` : ` (rerun with CLAUDE_BRIDGE_DEBUG=1 to capture a debug log)`),
 			"warning",
 		);
@@ -733,6 +723,7 @@ function mapToolArgs(
 // Global (not query state):
 let piUI: ExtensionUIContext | null = null;
 let piMode: ExtensionContext["mode"] | null = null;
+let piModelRegistry: AnthropicAuthRegistry | null = null;
 const activeQueryContexts = new Set<QueryContext>();
 
 // `plan` is the one setting whose default silently costs the user something (no
@@ -1471,10 +1462,8 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
 	// also autocompact would double-flush the prompt cache and races pi's
 	// threshold with CC's, including CC's anti-thrashing guard (issue #8).
 	// Manual /compact in CC still works (we never invoke it).
-	const childEnv = { ...process.env, ...CC_CHILD_ENV };
 	const queryOptions: NonNullable<Parameters<typeof query>[0]["options"]> = {
 		cwd,
-		env: childEnv,
 		tools: [],
 		permissionMode: "bypassPermissions",
 		includePartialMessages: true,
@@ -1498,20 +1487,17 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
 		`appendSys=${appendSystemPrompt} strictMcp=${strictMcpConfigEnabled}`,
 		`prompt=${promptText.slice(0, 60)}${promptBlocks ? " [+images]" : ""}`);
 
-	// 3. Start SDK query and claim it for this context
+	// Resolve Pi's Anthropic credential before every fresh child. OAuth refresh is
+	// asynchronous, while pi's provider API must return its stream synchronously,
+	// so query startup runs in the background and forwards into the claimed stream.
 	let wasAborted = false;
-	const sdkQuery = query({ prompt: promptStream.stream, options: queryOptions });
-	queryCtx.activeQuery = sdkQuery;
-	activeQueryContexts.add(queryCtx);
-
-	// 4. Capture context for abort handling
+	let sdkQuery: ReturnType<typeof query> | null = null;
+	const authPending = { kind: "claude-auth-pending" };
+	queryCtx.activeQuery = authPending;
 	const abortCtx = queryCtx;
-
 	const requestAbort = () => {
-		// interrupt() asks the CLI to stop gracefully; close() kills it immediately.
-		// Both are needed — interrupt alone lets the current API call finish.
-		void sdkQuery.interrupt().catch(() => {});
-		try { sdkQuery.close(); } catch {}
+		void sdkQuery?.interrupt().catch(() => {});
+		try { sdkQuery?.close(); } catch {}
 	};
 	const onAbort = () => {
 		wasAborted = true;
@@ -1523,88 +1509,96 @@ function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: Sim
 		else options.signal.addEventListener("abort", onAbort, { once: true });
 	}
 
-	// Background consumer — runs until query ends
-	consumeQuery(sdkQuery, customToolNameToPi, model, () => wasAborted, queryCtx)
-		.then(async ({ capturedSessionId }) => {
-			debug(`provider: consumeQuery completed, stopReason=${queryCtx.turnOutput?.stopReason}, error=${queryCtx.turnOutput?.errorMessage}, aborted=${wasAborted}`);
+	void (async () => {
+		queryOptions.env = await resolveClaudeChildEnv(piModelRegistry);
+		if (wasAborted || options?.signal?.aborted) throw new Error("Operation aborted");
 
-			// --- Abort detection in normal completion path ---
-			if (wasAborted || options?.signal?.aborted) {
-				if (sharedSession) sharedSession = { ...sharedSession, needsRebuild: true, forceRotate: true };
-				debug(`provider: abort detected, marked sharedSession needsRebuild + forceRotate`);
-				if (queryCtx.turnOutput) {
-					queryCtx.turnOutput.stopReason = "aborted";
-					queryCtx.turnOutput.errorMessage = "Operation aborted";
-				}
-				const stream = queryCtx.currentPiStream;
-				stream?.push({ type: "error", reason: "aborted", error: queryCtx.turnOutput! });
-				markStreamComplete(stream);
-				stream?.end();
-				queryCtx.currentPiStream = null;
-				return;
-			}
+		const startedQuery = query({ prompt: promptStream.stream, options: queryOptions });
+		sdkQuery = startedQuery;
+		queryCtx.activeQuery = startedQuery;
+		activeQueryContexts.add(queryCtx);
+		// query() may synchronously trigger an abort before sdkQuery is assigned.
+		// Re-check now so the just-created child cannot escape requestAbort().
+		if (wasAborted || options?.signal?.aborted) {
+			requestAbort();
+			throw new Error("Operation aborted");
+		}
 
-			// --- Capture session ID ---
-			const sessionId = capturedSessionId ?? sharedSession?.sessionId;
-			if (syncResult.preserveSharedSession) {
-				if (capturedSessionId && capturedSessionId !== sharedSession?.sessionId) {
-					deleteSession(capturedSessionId, cwd, process.env.CLAUDE_CONFIG_DIR);
-					debug(`provider: query done, deleted ephemeral session ${capturedSessionId.slice(0, 8)} to preserve shared session`);
-				}
-				debug(`provider: query done, ignoring captured session ${capturedSessionId?.slice(0, 8) ?? "none"} to preserve shared session`);
-			} else if (sessionId) {
-				const cursor = Math.max(context.messages.length, queryCtx.latestCursor, sharedSession?.cursor ?? 0);
-				debug(`provider: query done, session=${sessionId.slice(0, 8)}, cursor=${cursor}`);
-				sharedSession = { sessionId, cursor, cwd };
-			}
+		const { capturedSessionId } = await consumeQuery(startedQuery, customToolNameToPi, model, () => wasAborted, queryCtx);
+		debug(`provider: consumeQuery completed, stopReason=${queryCtx.turnOutput?.stopReason}, error=${queryCtx.turnOutput?.errorMessage}, aborted=${wasAborted}`);
 
-			if (!isReentrant && queryCtx.activeQuery === sdkQuery) {
-				debug("provider: clearing activeQuery before final stream completion");
-				queryCtx.activeQuery = null;
+		if (wasAborted || options?.signal?.aborted) {
+			if (sharedSession) sharedSession = { ...sharedSession, needsRebuild: true, forceRotate: true };
+			debug(`provider: abort detected, marked sharedSession needsRebuild + forceRotate`);
+			if (queryCtx.turnOutput) {
+				queryCtx.turnOutput.stopReason = "aborted";
+				queryCtx.turnOutput.errorMessage = "Operation aborted";
 			}
-			finalizeCurrentStream(queryCtx, queryCtx.turnOutput?.stopReason);
-		})
+			const currentStream = queryCtx.currentPiStream;
+			currentStream?.push({ type: "error", reason: "aborted", error: queryCtx.turnOutput! });
+			markStreamComplete(currentStream);
+			currentStream?.end();
+			queryCtx.currentPiStream = null;
+			return;
+		}
+
+		const sessionId = capturedSessionId ?? sharedSession?.sessionId;
+		if (syncResult.preserveSharedSession) {
+			if (capturedSessionId && capturedSessionId !== sharedSession?.sessionId) {
+				deleteSession(capturedSessionId, cwd, process.env.CLAUDE_CONFIG_DIR);
+				debug(`provider: query done, deleted ephemeral session ${capturedSessionId.slice(0, 8)} to preserve shared session`);
+			}
+			debug(`provider: query done, ignoring captured session ${capturedSessionId?.slice(0, 8) ?? "none"} to preserve shared session`);
+		} else if (sessionId) {
+			const cursor = Math.max(context.messages.length, queryCtx.latestCursor, sharedSession?.cursor ?? 0);
+			debug(`provider: query done, session=${sessionId.slice(0, 8)}, cursor=${cursor}`);
+			sharedSession = { sessionId, cursor, cwd };
+		}
+
+		if (queryCtx.activeQuery === startedQuery) {
+			activeQueryContexts.delete(queryCtx);
+			if (!isReentrant) debug("provider: clearing activeQuery before final stream completion");
+			queryCtx.activeQuery = null;
+		}
+		finalizeCurrentStream(queryCtx, queryCtx.turnOutput?.stopReason);
+	})()
 		.catch((error) => {
-			debug(`provider: query error, model=${cliModel}, aborted=${Boolean(options?.signal?.aborted)}, error=`, error);
+			debug(`provider: query error, model=${cliModel}, aborted=${Boolean(wasAborted || options?.signal?.aborted)}, error=`, error);
 			if ((wasAborted || options?.signal?.aborted) && sharedSession) {
 				sharedSession = { ...sharedSession, needsRebuild: true, forceRotate: true };
-			} else {
+			} else if (sdkQuery) {
+				// Once Claude Code starts, a failed turn can leave its transcript
+				// incomplete. Auth-resolution failures happen before that and must not
+				// discard an otherwise resumable shared session.
 				sharedSession = null;
 			}
 			promptStream.fail(error instanceof Error ? error : new Error(String(error)));
 			if (queryCtx.turnOutput) {
-				queryCtx.turnOutput.stopReason = options?.signal?.aborted ? "aborted" : "error";
-				// The SDK drops its copy of the result text if any message follows the error
-				// result, so prefer the cause consumeQuery recorded off the result itself.
+				queryCtx.turnOutput.stopReason = wasAborted || options?.signal?.aborted ? "aborted" : "error";
 				queryCtx.turnOutput.errorMessage ??= error instanceof Error ? error.message : String(error);
 			}
-			if (!isReentrant && queryCtx.activeQuery === sdkQuery) {
+			if (queryCtx.activeQuery === authPending || (sdkQuery && queryCtx.activeQuery === sdkQuery)) {
 				queryCtx.releasePendingToolCalls("Query ended");
-				debug("provider: clearing activeQuery before error stream completion");
+				activeQueryContexts.delete(queryCtx);
+				if (!isReentrant) debug("provider: clearing activeQuery before error stream completion");
 				queryCtx.activeQuery = null;
 			}
-			const stream = queryCtx.currentPiStream;
-			stream?.push({ type: "error", reason: (queryCtx.turnOutput?.stopReason ?? "error") as "aborted" | "error", error: queryCtx.turnOutput! });
-			markStreamComplete(stream);
-			stream?.end();
+			const currentStream = queryCtx.currentPiStream;
+			currentStream?.push({ type: "error", reason: (queryCtx.turnOutput?.stopReason ?? "error") as "aborted" | "error", error: queryCtx.turnOutput! });
+			markStreamComplete(currentStream);
+			currentStream?.end();
 			queryCtx.currentPiStream = null;
 		})
 		.finally(() => {
 			if (options?.signal) options.signal.removeEventListener("abort", onAbort);
-			// Settle any ack still parked in the generator — the CLI is gone, so
-			// nothing will resume it. Clear the handle only if a later query
-			// hasn't already claimed the shared context.
 			promptStream.fail(new Error("query ended"));
 			if (queryCtx.promptStream === promptStream) queryCtx.promptStream = null;
-			if (queryCtx.activeQuery === sdkQuery) {
+			if (queryCtx.activeQuery === authPending || (sdkQuery && queryCtx.activeQuery === sdkQuery)) {
 				queryCtx.releasePendingToolCalls("Query ended");
 				queryCtx.activeQuery = null;
-				// Guarded like the two cleanups above: if a later query has already
-				// claimed this context, removing it from the routing set would send
-				// that query's tool results down the orphan path and strand its handler.
 				activeQueryContexts.delete(queryCtx);
 			}
-			sdkQuery.close();
+			try { sdkQuery?.close(); } catch {}
 		});
 
 	return stream;
@@ -1674,12 +1668,13 @@ async function promptAndWait(
 		`mode=${mode} model=${modelId} cliModel=${cliModel} effort=${effort ?? "default"}`,
 		`isolated=${options?.isolated ?? false} resume=${resumeSessionId?.slice(0, 8) ?? "none"}`,
 		`skills=${Boolean(skillsBlock)} promptLen=${prompt.length}`);
+	const childEnv = await resolveClaudeChildEnv(piModelRegistry);
 
 	const sdkQuery = query({
 		prompt,
 		options: {
 			cwd,
-			env: { ...process.env, ...CC_CHILD_ENV },
+			env: childEnv,
 			permissionMode: "bypassPermissions",
 			settings: claudeCodeSettings(providerSettings),
 			...(disallowedTools.length ? { disallowedTools } : {}),
@@ -1816,6 +1811,7 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_start", (event, ctx) => {
 		piUI = ctx.ui;
 		piMode = ctx.mode;
+		piModelRegistry = ctx.modelRegistry;
 		if (event.reason === "new" || event.reason === "resume" || event.reason === "fork") {
 			clearSession(`session_start:${event.reason}`);
 		}

@@ -4,6 +4,7 @@
 import type { Message as PiMessage } from "@earendil-works/pi-ai";
 import type { Message as SessionMessage } from "cc-session-io";
 import { pascalCase } from "change-case";
+import { createHash } from "node:crypto";
 import { MCP_TOOL_PREFIX } from "./skills.js";
 
 export const PROVIDER_ID = "claude-bridge";
@@ -14,10 +15,27 @@ export const PI_TO_SDK_TOOL_NAME: Record<string, string> = {
 	read: "Read", write: "Write", edit: "Edit", bash: "Bash",
 };
 
+const MAX_ANTHROPIC_TOOL_ID_LENGTH = 64;
+
 export function sanitizeToolId(id: string, cache: Map<string, string>): string {
 	const existing = cache.get(id);
 	if (existing) return existing;
-	const clean = id.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+	const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, "_") || "tool";
+	let clean = sanitized.slice(0, MAX_ANTHROPIC_TOOL_ID_LENGTH);
+	const occupied = new Set(cache.values());
+	if (occupied.has(clean)) {
+		const suffix = `_${createHash("sha256").update(id).digest("hex").slice(0, 12)}`;
+		clean = `${sanitized.slice(0, MAX_ANTHROPIC_TOOL_ID_LENGTH - suffix.length)}${suffix}`;
+		// A truncated hash collision is extraordinarily unlikely, but the converter
+		// must never emit duplicate IDs into a parallel tool turn.
+		let attempt = 2;
+		while (occupied.has(clean)) {
+			const numberedSuffix = `${suffix}_${attempt++}`;
+			clean = `${sanitized.slice(0, MAX_ANTHROPIC_TOOL_ID_LENGTH - numberedSuffix.length)}${numberedSuffix}`;
+		}
+	}
+
 	cache.set(id, clean);
 	return clean;
 }

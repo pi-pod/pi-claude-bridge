@@ -1,6 +1,6 @@
 {
-  "name": "pi-claude-bridge",
-  "version": "0.6.3",
+  "name": "pi-claude-agent-sdk",
+  "version": "0.7.0",
   "private": false,
   "description": "Pi extension that uses Claude Code (via Agent SDK) as a model provider and adds an AskClaude tool.",
   "keywords": [
@@ -11,10 +11,17 @@
     "claude-agent-sdk"
   ],
   "author": "Eli Dickinson",
+  "contributors": [
+    "Evan Verma"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elidickinson/pi-claude-bridge.git"
+    "url": "git+https://github.com/pi-pod/pi-claude-agent-sdk.git"
+  },
+  "homepage": "https://github.com/pi-pod/pi-claude-agent-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/pi-pod/pi-claude-agent-sdk/issues"
   },
   "engines": {
     "node": ">=20"
